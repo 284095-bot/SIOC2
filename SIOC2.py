@@ -1,134 +1,105 @@
 import cv2
 import numpy as np
+import urllib.request
 
-def apply_convolution_filters(image_path):
-    """
-    Realizacja wymagania 1: Zaimplementować 3 podane zastosowania konwolucji (3.0).
-    Zastosowania: Wykrywanie krawędzi, Rozmywanie, Wyostrzanie.
-    """
-    # Wczytanie obrazu w skali szarości
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        print(f"Błąd: Nie można wczytać obrazu {image_path}")
+def main_pipeline():
+    url = "https://github.com/284095-bot/SIOC2/raw/main/Seal.jpg"
+    
+    try:
+        resp = urllib.request.urlopen(url)
+        img_array = np.array(bytearray(resp.read()), dtype=np.uint8)
+        img_color_src = cv2.imdecode(img_array, -1)
+    except:
         return
 
-    # --- 1. Wykrywanie krawędzi (Operator Laplace'a) ---
-    # Zgodnie z instrukcją używamy operatora L [cite: 8, 10]
-    kernel_laplace = np.array([
-        [0,  1, 0],
-        [1, -4, 1],
-        [0,  1, 0]
-    ])
-    
-    # --- 2. Rozmywanie (Rozmycie Gaussowskie) ---
-    # Zgodnie z instrukcją używamy jądra G z wagą 1/16 [cite: 16, 18]
-    kernel_gauss = np.array([
-        [1, 2, 1],
-        [1, 4, 1],
-        [1, 2, 1]
-    ]) / 16.0
-    
-    # --- 3. Wyostrzanie ---
-    # Zgodnie z instrukcją używamy jądra W [cite: 22, 24]
-    kernel_sharpen = np.array([
-        [0, -1, 0],
-        [-1, 5, -1],
-        [0, -1, 0]
-    ])
-
-    # Aplikacja filtrów za pomocą cv2.filter2D (konwolucja dyskretna) [cite: 5]
-    edges = cv2.filter2D(img, -1, kernel_laplace)
-    blurred = cv2.filter2D(img, -1, kernel_gauss)
-    sharpened = cv2.filter2D(img, -1, kernel_sharpen)
-
-    # Wyświetlenie wyników
-    cv2.imshow("Oryginal", img)
-    cv2.imshow("Krawedzie (Laplace)", edges)
-    cv2.imshow("Rozmycie (Gauss)", blurred)
-    cv2.imshow("Wyostrzanie", sharpened)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-def demosaicing_bayer(bayer_img_path):
-    """
-    Realizacja wymagania 2: Wykonać demozaikowanie obrazów korzystając z konwolucji 2D dla filtru Bayera (3.0).
-    Wzór Bayera przyjęty z macierzy B w instrukcji (GRBG):
-    G R
-    B G
-    
-    """
-    # Wczytanie obrazu mozaiki (surowy obraz 1-kanałowy)
-    raw = cv2.imread(bayer_img_path, cv2.IMREAD_GRAYSCALE)
-    if raw is None:
-        print(f"Błąd: Nie można wczytać obrazu {bayer_img_path}")
+    if img_color_src is None:
         return
 
-    raw = raw.astype(np.float32) / 255.0
-    h, w = raw.shape
+    max_height = 400
+    h, w = img_color_src.shape[:2]
+    scale = max_height / h
+    new_w = int(w * scale)
+    img_color_src = cv2.resize(img_color_src, (new_w, max_height))
 
-    # --- Tworzenie masek dla poszczególnych kolorów (GRBG) ---
-    # Maska R (czerwony) - obecny w wierszu 0, kolumnie 1 (co 2)
+    img_gray = cv2.cvtColor(img_color_src, cv2.COLOR_BGR2GRAY)
+
+    kernel_laplace = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]])
+    kernel_gauss = np.array([[1, 2, 1], [1, 4, 1], [1, 2, 1]]) / 16.0
+    kernel_sharpen = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+
+    res_edges = cv2.filter2D(img_gray, -1, kernel_laplace)
+    res_blur = cv2.filter2D(img_gray, -1, kernel_gauss)
+    res_sharpen = cv2.filter2D(img_gray, -1, kernel_sharpen)
+
+    h, w = img_gray.shape
+    raw_mosaic = np.zeros((h, w), dtype=np.float32)
+    src_float = img_color_src.astype(np.float32) / 255.0
+
+    raw_mosaic[0::2, 0::2] = src_float[0::2, 0::2, 1] 
+    raw_mosaic[1::2, 1::2] = src_float[1::2, 1::2, 1] 
+    raw_mosaic[0::2, 1::2] = src_float[0::2, 1::2, 2] 
+    raw_mosaic[1::2, 0::2] = src_float[1::2, 0::2, 0] 
+
     mask_r = np.zeros((h, w), dtype=np.float32)
-    mask_r[0::2, 1::2] = 1
-
-    # Maska B (niebieski) - obecny w wierszu 1, kolumnie 0 (co 2)
+    mask_r[0::2, 1::2] = 1 
+    
     mask_b = np.zeros((h, w), dtype=np.float32)
-    mask_b[1::2, 0::2] = 1
-
-    # Maska G (zielony) - obecny tam, gdzie nie ma R i B
+    mask_b[1::2, 0::2] = 1 
+    
     mask_g = np.zeros((h, w), dtype=np.float32)
-    mask_g[0::2, 0::2] = 1 # G w rzędach parzystych
-    mask_g[1::2, 1::2] = 1 # G w rzędach nieparzystych
+    mask_g[0::2, 0::2] = 1
+    mask_g[1::2, 1::2] = 1 
 
-    # Rozdzielenie kanałów (tam gdzie nie ma koloru, jest 0)
-    R = raw * mask_r
-    G = raw * mask_g
-    B = raw * mask_b
+    R_in = raw_mosaic * mask_r
+    G_in = raw_mosaic * mask_g
+    B_in = raw_mosaic * mask_b
 
-    # --- Definicja jąder konwolucji do interpolacji ---
-    # Zgodnie z instrukcją: wzmocnienie (gain) powinno być proporcjonalne do ilości pikseli.
-    # Dla maski 2x2:
-    # - Czerwony i Niebieski (1 piksel na 4): wymagane wzmocnienie 4.
-    # - Zielony (2 piksele na 4): wymagane wzmocnienie 2.
+    kernel_rb = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]]) / 4.0
+    kernel_g = np.array([[0, 1, 0], [1, 4, 1], [0, 1, 0]]) / 4.0
+
+    R_out = cv2.filter2D(R_in, -1, kernel_rb, borderType=cv2.BORDER_CONSTANT)
+    G_out = cv2.filter2D(G_in, -1, kernel_g,  borderType=cv2.BORDER_CONSTANT)
+    B_out = cv2.filter2D(B_in, -1, kernel_rb, borderType=cv2.BORDER_CONSTANT)
+
+    res_demosaic = cv2.merge([B_out, G_out, R_out])
+    res_demosaic = np.clip(res_demosaic, 0, 1)
+    res_demosaic_uint8 = (res_demosaic * 255).astype(np.uint8)
+
+    def to_vis(gray_img):
+        return cv2.cvtColor(gray_img, cv2.COLOR_GRAY2BGR)
+
+    vis_gray_org = to_vis(img_gray)
+    vis_edges = to_vis(res_edges)
+    vis_blur = to_vis(res_blur)
+    vis_sharpen = to_vis(res_sharpen)
+    vis_mosaic_input = to_vis((raw_mosaic * 255).astype(np.uint8))
+
+    def label(img, text):
+        font_scale = 0.7 
+        thickness = 2
+        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0,0,0), thickness + 2)
+        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255,255,255), thickness)
+
+    label(vis_gray_org, "1. Obraz Oryginalny")
+    label(vis_edges,    "2. Wykrywanie Krawedzi (Laplace)")
+    label(vis_blur,     "3. Rozmywanie (Gauss)")
+    label(vis_sharpen,  "4. Wyostrzanie")
+    label(vis_mosaic_input, "5. Mozaika")
+    label(res_demosaic_uint8, "6. Wynik Demozaikowania")
+
+    row1 = np.hstack([vis_gray_org, vis_edges, vis_blur])
+    row2 = np.hstack([vis_sharpen, vis_mosaic_input, res_demosaic_uint8])
+    final_grid = np.vstack([row1, row2])
+
+    window_name = "Zadanie - Pelny Ekran"
     
-    # Jądro dla R i B (wzmocnienie 4)
-    # Macierz podstawowa sumuje się do 16. Dzielimy przez 4 -> suma 4.
-    kernel_rb = np.array([
-        [1, 2, 1],
-        [2, 4, 2],
-        [1, 2, 1]
-    ]) / 4.0
-
-    # Jądro dla G (wzmocnienie 2)
-    # Macierz podstawowa sumuje się do 8. Dzielimy przez 4 -> suma 2.
-    kernel_g = np.array([
-        [0, 1, 0],
-        [1, 4, 1],
-        [0, 1, 0]
-    ]) / 4.0
-
-    # --- Wykonanie konwolucji (interpolacja brakujących pikseli) [cite: 48, 49] ---
-    # Należy stosować padding zerami, aby uniknąć błędów na brzegach [cite: 54, 55]
-    # W OpenCV BORDER_CONSTANT = 0 domyślnie przy odpowiedniej konfiguracji, ale warto wymusić.
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     
-    R_full = cv2.filter2D(R, -1, kernel_rb, borderType=cv2.BORDER_CONSTANT)
-    G_full = cv2.filter2D(G, -1, kernel_g,  borderType=cv2.BORDER_CONSTANT)
-    B_full = cv2.filter2D(B, -1, kernel_rb, borderType=cv2.BORDER_CONSTANT)
-
-    # Złożenie obrazu RGB
-    merged = cv2.merge([B_full, G_full, R_full]) # OpenCV używa kolejności BGR
-    merged = np.clip(merged, 0, 1) # Zabezpieczenie zakresu [cite: 52]
-
-    # Wyświetlenie
-    cv2.imshow("Obraz zdemozaikowany", merged)
+    cv2.imshow(window_name, final_grid)
+    
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-# --- Uruchomienie ---
 if __name__ == "__main__":
-    # Podmień nazwy plików na te, które masz w pliku ZIP
-    print("Uruchamianie czesci 1: Podstawowe filtry")
-    # apply_convolution_filters("nazwa_obrazka.jpg") 
-    
-    print("Uruchamianie czesci 2: Demozaikowanie")
-    # demosaicing_bayer("nazwa_mozaiki.bmp")
+    main_pipeline()
