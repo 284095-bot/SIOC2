@@ -111,30 +111,30 @@ def main_pipeline():
         cv2.putText(img, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
     v_org = img_color_src
-    v_sobel = to_vis(res_sobel); label(v_sobel, "Sobel (X+Y)")
+    v_sobel = to_vis(res_sobel); label(v_sobel, "Sobel")
     v_laplace = to_vis(res_laplace); label(v_laplace, "Laplace")
-    v_prewitt = to_vis(res_prewitt); label(v_prewitt, "Bonus: Prewitt")
-    v_scharr = to_vis(res_scharr); label(v_scharr, "Bonus: Scharr")
+    v_prewitt = to_vis(res_prewitt); label(v_prewitt, "Prewitt")
+    v_scharr = to_vis(res_scharr); label(v_scharr, "Scharr")
     
-    v_gauss = res_gauss; label(v_gauss, "Gauss Blur")
-    v_box = res_box; label(v_box, "Box Blur")
+    v_gauss = res_gauss; label(v_gauss, "Gauss")
+    v_box = res_box; label(v_box, "Jadro usredniajace")
     v_sharp = res_sharpen; label(v_sharp, "Wyostrzanie")
 
-    v_bay_sens = sensor_image_bayer.astype(np.uint8); label(v_bay_sens, "Bayer RAW")
-    v_bay_res = res_bayer; label(v_bay_res, "Bayer Wynik")
+    v_bay_sens = sensor_image_bayer.astype(np.uint8); label(v_bay_sens, "Bayer Mozaika")
+    v_bay_res = res_bayer; label(v_bay_res, "Bayer Demozaikowanie")
     
-    v_fuji_sens = sensor_image_fuji.astype(np.uint8); label(v_fuji_sens, "Bonus: Fuji RAW")
-    v_fuji_res = res_fuji; label(v_fuji_res, "Bonus: Fuji Wynik")
+    v_fuji_sens = sensor_image_fuji.astype(np.uint8); label(v_fuji_sens, "Fuji Mozaika")
+    v_fuji_res = res_fuji; label(v_fuji_res, "Fuji Demozaikowanie")
 
     win1 = np.vstack([np.hstack([v_org, v_sobel]), np.hstack([v_laplace, v_prewitt]), np.hstack([v_scharr, np.zeros_like(v_org)])])
     win2 = np.hstack([v_gauss, v_box, v_sharp])
     win3 = np.hstack([v_org, v_bay_sens, v_bay_res])
     win4 = np.hstack([v_org, v_fuji_sens, v_fuji_res])
 
-    cv2.imshow("1. Zadanie: Krawedzie (PDF s.1)", win1)
-    cv2.imshow("2. Zadanie: Rozmycie i Wyostrzanie (PDF s.1-2)", win2)
-    cv2.imshow("3. Zadanie: Demozaikowanie Bayera (PDF s.2)", win3)
-    cv2.imshow("4. Zadanie: Demozaikowanie Fuji (Bonus)", win4)
+    cv2.imshow("1. Zadanie: Wykrywanie krawedzi", win1)
+    cv2.imshow("2. Zadanie: Rozmycie i Wyostrzanie", win2)
+    cv2.imshow("3. Zadanie: Demozaikowanie Bayera", win3)
+    cv2.imshow("4. Zadanie: Demozaikowanie Fuji", win4)
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
