@@ -56,52 +56,60 @@ def main_pipeline():
     k_sharpen = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
     res_sharpen = cv2.filter2D(img_color_src, -1, k_sharpen)
 
-    mask_b_bay = np.array([[0, 0], [1, 0]], dtype=np.uint8)
-    mask_g_bay = np.array([[1, 0], [0, 1]], dtype=np.uint8)
-    mask_r_bay = np.array([[0, 1], [0, 0]], dtype=np.uint8)
-    bayer_mask_small = cv2.merge([mask_b_bay, mask_g_bay, mask_r_bay])
+    mask_r = np.zeros((max_height, new_w), dtype=np.float32)
+    mask_g = np.zeros((max_height, new_w), dtype=np.float32)
+    mask_b = np.zeros((max_height, new_w), dtype=np.float32)
 
-    bayer_filter = np.tile(bayer_mask_small, (img_color_src.shape[0] // 2, img_color_src.shape[1] // 2, 1))
-    sensor_image_bayer = img_color_src.astype(np.float32) * bayer_filter
+    mask_g[0::2, 0::2] = 1
+    mask_r[0::2, 1::2] = 1
+    mask_b[1::2, 0::2] = 1
+    mask_g[1::2, 1::2] = 1
 
-    k_gain_4 = np.ones((2, 2), dtype=np.float32)
-    k_gain_2 = np.ones((2, 2), dtype=np.float32) * 0.5
-    
-    rec_channels_bayer = []
-    for c in range(3):
-        layer = sensor_image_bayer[:, :, c]
-        k = k_gain_2 if c == 1 else k_gain_4
-        rec_channels_bayer.append(cv2.filter2D(layer, -1, k, borderType=cv2.BORDER_CONSTANT))
+    s_r = img_color_src[:, :, 2] * mask_r
+    s_g = img_color_src[:, :, 1] * mask_g
+    s_b = img_color_src[:, :, 0] * mask_b
 
-    res_bayer = np.clip(cv2.merge(rec_channels_bayer), 0, 255).astype(np.uint8)
+    k_b_rb = np.ones((2, 2), dtype=np.float32)
+    k_b_g = np.ones((2, 2), dtype=np.float32) * 0.5
 
-    fuji_g = np.array([[1, 0, 0], [0, 1, 1], [0, 1, 1]], dtype=np.uint8)
-    fuji_b = np.array([[0, 1, 0], [0, 0, 0], [1, 0, 0]], dtype=np.uint8)
-    fuji_r = np.array([[0, 0, 1], [1, 0, 0], [0, 0, 0]], dtype=np.uint8)
+    rb_bayer = cv2.filter2D(s_r, -1, k_b_rb, borderType=cv2.BORDER_CONSTANT)
+    gb_bayer = cv2.filter2D(s_g, -1, k_b_g, borderType=cv2.BORDER_CONSTANT)
+    bb_bayer = cv2.filter2D(s_b, -1, k_b_rb, borderType=cv2.BORDER_CONSTANT)
 
-    mask_ch0_fuji = fuji_b
-    mask_ch1_fuji = fuji_g
-    mask_ch2_fuji = fuji_r
+    res_bayer = cv2.merge([
+        np.clip(bb_bayer, 0, 255).astype(np.uint8),
+        np.clip(gb_bayer, 0, 255).astype(np.uint8),
+        np.clip(rb_bayer, 0, 255).astype(np.uint8)
+    ])
 
-    fuji_mask_small = cv2.merge([mask_ch0_fuji, mask_ch1_fuji, mask_ch2_fuji])
-    
-    tiles_y_f = img_color_src.shape[0] // 3
-    tiles_x_f = img_color_src.shape[1] // 3
-    fuji_filter = np.tile(fuji_mask_small, (tiles_y_f, tiles_x_f, 1))
-    
-    sensor_image_fuji = img_color_src.astype(np.float32) * fuji_filter
+    v_bay_sens = cv2.merge([(s_b).astype(np.uint8), (s_g).astype(np.uint8), (s_r).astype(np.uint8)])
 
-    k_fuji_g = np.ones((3, 3), dtype=np.float32) * (9.0 / 5.0)
-    k_fuji_rb = np.ones((3, 3), dtype=np.float32) * (9.0 / 2.0)
+    f_g_p = np.array([[1, 0, 0], [0, 1, 1], [0, 1, 1]], dtype=np.float32)
+    f_b_p = np.array([[0, 1, 0], [0, 0, 0], [1, 0, 0]], dtype=np.float32)
+    f_r_p = np.array([[0, 0, 1], [1, 0, 0], [0, 0, 0]], dtype=np.float32)
 
-    rec_channels_fuji = []
-    for c in range(3):
-        layer = sensor_image_fuji[:, :, c]
-        k = k_fuji_g if c == 1 else k_fuji_rb
-        k_norm = k / 9.0 
-        rec_channels_fuji.append(cv2.filter2D(layer, -1, k_norm, borderType=cv2.BORDER_CONSTANT))
+    mask_f_g = np.tile(f_g_p, (max_height // 3, new_w // 3))
+    mask_f_b = np.tile(f_b_p, (max_height // 3, new_w // 3))
+    mask_f_r = np.tile(f_r_p, (max_height // 3, new_w // 3))
 
-    res_fuji = np.clip(cv2.merge(rec_channels_fuji), 0, 255).astype(np.uint8)
+    s_f_r = img_color_src[:, :, 2] * mask_f_r
+    s_f_g = img_color_src[:, :, 1] * mask_f_g
+    s_f_b = img_color_src[:, :, 0] * mask_f_b
+
+    k_f_rb = np.ones((3, 3), dtype=np.float32) * (9.0 / 2.0)
+    k_f_g = np.ones((3, 3), dtype=np.float32) * (9.0 / 5.0)
+
+    rf_fuji = cv2.filter2D(s_f_r, -1, k_f_rb / 9.0, borderType=cv2.BORDER_CONSTANT) * 9.0
+    gf_fuji = cv2.filter2D(s_f_g, -1, k_f_g / 9.0, borderType=cv2.BORDER_CONSTANT) * 9.0
+    bf_fuji = cv2.filter2D(s_f_b, -1, k_f_rb / 9.0, borderType=cv2.BORDER_CONSTANT) * 9.0
+
+    res_fuji = cv2.merge([
+        np.clip(bf_fuji, 0, 255).astype(np.uint8),
+        np.clip(gf_fuji, 0, 255).astype(np.uint8),
+        np.clip(rf_fuji, 0, 255).astype(np.uint8)
+    ])
+
+    v_fuji_sens = cv2.merge([(s_f_b).astype(np.uint8), (s_f_g).astype(np.uint8), (s_f_r).astype(np.uint8)])
 
     def to_vis(gray_img):
         return cv2.cvtColor(gray_img, cv2.COLOR_GRAY2BGR)
@@ -120,10 +128,10 @@ def main_pipeline():
     v_box = res_box; label(v_box, "Jadro usredniajace")
     v_sharp = res_sharpen; label(v_sharp, "Wyostrzanie")
 
-    v_bay_sens = sensor_image_bayer.astype(np.uint8); label(v_bay_sens, "Bayer Mozaika")
+    label(v_bay_sens, "Bayer Mozaika")
     v_bay_res = res_bayer; label(v_bay_res, "Bayer Demozaikowanie")
     
-    v_fuji_sens = sensor_image_fuji.astype(np.uint8); label(v_fuji_sens, "Fuji Mozaika")
+    label(v_fuji_sens, "Fuji Mozaika")
     v_fuji_res = res_fuji; label(v_fuji_res, "Fuji Demozaikowanie")
 
     win1 = np.vstack([np.hstack([v_org, v_sobel]), np.hstack([v_laplace, v_prewitt]), np.hstack([v_scharr, np.zeros_like(v_org)])])
